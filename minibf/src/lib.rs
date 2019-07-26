@@ -85,8 +85,14 @@ impl VM {
             return;
         }
 
-        while code[self.ip] != b']' {
+        let mut unclosed_brackets = 1;
+        while unclosed_brackets > 0 {
             self.ip += 1;
+            match code[self.ip] {
+                b'[' => unclosed_brackets += 1,
+                b']' => unclosed_brackets -= 1,
+                _ => {},
+            }
         }
 
         self.ip += 1;
@@ -147,6 +153,12 @@ mod tests {
 
         vm.run(">++++++[<+++++++>-]");
         assert_eq!(vm.mem()[..2], [42, 0]);
+    }
+
+    #[test]
+    fn nested_loops() {
+        let mut vm = VM::new();
+        vm.run("[[[]]]");
     }
 
     #[test]
