@@ -368,6 +368,16 @@ impl<'c> Context<'c> {
         self.or_assign(a, target);
     }
 
+    pub fn nor_assign(&mut self, source: isize, target: isize) {
+        self.or_assign(source, target);
+        self.not(target);
+    }
+
+    pub fn nor(&mut self, a: isize, b: isize, target: isize) {
+        self.copy(b, target);
+        self.nor_assign(a, target);
+    }
+
     pub fn xor_assign(&mut self, source: isize, target: isize) {
         self.equals_assign(source, target);
     }
