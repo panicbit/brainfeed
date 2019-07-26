@@ -270,6 +270,16 @@ impl<'c> Context<'c> {
         self.is_zero_destructive(target);
     }
 
+    pub fn is_not_zero_destructive(&mut self, value: isize) {
+        self.is_zero_destructive(value);
+        self.not(value);
+    }
+
+    pub fn is_not_zero(&mut self, source: isize, target: isize) {
+        self.is_zero(source, target);
+        self.not(target);
+    }
+
     pub fn equals_assign(&mut self, source: isize, target: isize) {
         self.with_stack_alloc(|ctx, tmp| {
             ctx.copy(source, tmp);
