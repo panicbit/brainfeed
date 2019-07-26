@@ -343,6 +343,12 @@ impl<'c> Context<'c> {
         self.and_assign(a, target);
     }
 
+    pub fn and_not(&mut self, a: isize, b: isize, target: isize) {
+        self.copy(b, target);
+        self.not(target);
+        self.and_assign(a, target);
+    }
+
     pub fn or_assign(&mut self, source: isize, target: isize) {
         self.with_stack_alloc(|ctx, tmp| {
             ctx.mov(target, tmp);
