@@ -221,7 +221,7 @@ impl<'c> Context<'c> {
         });
     }
 
-    pub fn while_not_null<F>(&mut self, ptr: isize, f: F)
+    pub fn while_not_zero<F>(&mut self, ptr: isize, f: F)
     where
         F: FnOnce(&mut Context),
     {
@@ -237,7 +237,7 @@ impl<'c> Context<'c> {
     where
         F: FnOnce(&mut Context),
     {
-        self.while_not_null(cond, f);
+        self.while_not_zero(cond, f);
     }
 
 
@@ -247,7 +247,7 @@ impl<'c> Context<'c> {
     where
         F: FnOnce(&mut Context, isize)
     {
-        self.while_not_null(counter, |ctx| {
+        self.while_not_zero(counter, |ctx| {
             f(ctx, counter);
             ctx.decrement(counter);
         })
@@ -300,7 +300,7 @@ impl<'c> Context<'c> {
 
         self.clear(target);
 
-        self.while_not_null(source, |ctx| {
+        self.while_not_zero(source, |ctx| {
             ctx.increment(target);
             ctx.decrement(source);
         })
@@ -310,7 +310,7 @@ impl<'c> Context<'c> {
         self.with_stack_alloc(|ctx, is_zero| {
             ctx.cell(is_zero).set_bool(true);
 
-            ctx.while_not_null(value, |ctx| {
+            ctx.while_not_zero(value, |ctx| {
                 ctx.cell(is_zero).assume_bool(true).set_bool(false);
                 ctx.cell(value).set_bool(false);
             });
@@ -616,7 +616,7 @@ mod tests {
     }
 
     #[test]
-    fn while_not_null() {
+    fn while_not_zero() {
         let code = gen(|ctx| {
 
             let a = ctx.stack_alloc();
@@ -624,7 +624,7 @@ mod tests {
 
             ctx.cell(a).set(2);
             ctx.cell(i).set(3);
-            ctx.while_not_null(i, |ctx| {
+            ctx.while_not_zero(i, |ctx| {
                 ctx.increment(a);
             });
         });
