@@ -348,6 +348,11 @@ impl<'c> Context<'c> {
         })
     }
 
+    pub fn equals(&mut self, a: isize, b: isize, target: isize) {
+        self.copy(b, target);
+        self.equals_assign(a, target);
+    }
+
     pub fn greater_than_assign(&mut self, source: isize, target: isize) {
         self.with_stack_alloc4(|ctx, tmp, tmp_is_zero, target_is_zero, neither_is_zero| {
             ctx.copy(source, tmp);
