@@ -453,6 +453,7 @@ impl<'ctx, 'c> CellContext<'ctx, 'c> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use minibf::VM;
 
     #[test]
     fn seek() {
@@ -530,12 +531,34 @@ mod tests {
 
     #[test]
     fn not() {
-        let code = gen(|ctx| {
-            let cell = ctx.stack_alloc();
-            ctx.not(cell);
+        let mem = run(|ctx| {
+            ctx.with_stack_alloc2(|ctx, a, b| {
+                ctx.cell(a).set_bool(false);
+                ctx.cell(b).set_bool(true);
+                ctx.not(a);
+                ctx.not(b);
+            })
         });
 
-        assert_eq!(code, "unimplemented test");
+        assert_eq!(mem[..2], [1, 0]);
+    }
+
+    #[test]
+    fn or() {
+        let mem = run(|ctx| {
+            ctx.with_stack_alloc2(|ctx, false_, true_| {
+                ctx.with_stack_alloc4(|ctx, a, b, c, d| {
+                    ctx.cell(false_).set_bool(false);
+                    ctx.cell(true_).set_bool(true);
+                    ctx.or(false_, false_, a);
+                    ctx.or(false_,  true_, b);
+                    ctx.or( true_, false_, c);
+                    ctx.or( true_,  true_, d);
+                })
+            })
+        });
+
+        assert_eq!(mem[..6], [0, 1, 0, 1, 1, 1]);
     }
 
     #[test]
@@ -556,5 +579,18 @@ mod tests {
         f(&mut ctx);
 
         code
+    }
+
+    fn run<F>(f: F) -> Vec<u8>
+    where
+        F: FnOnce(&mut Context),
+    {
+        let code = gen(f);
+        let mut vm = VM::new();
+
+        println!("code: {}", code);
+
+        vm.run(&code);
+        vm.mem().to_vec()
     }
 }
