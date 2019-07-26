@@ -635,6 +635,20 @@ mod tests {
     }
 
     #[test]
+    fn add() {
+        let mem = run(|ctx| {
+            ctx.with_stack_alloc4(|ctx, a, b, r1, r2| {
+                ctx.cell(a).set(6);
+                ctx.cell(b).set(7);
+                ctx.add(a, b, r1);
+                ctx.add(a, b, r2);
+            })
+        });
+
+        assert_eq!(mem[..4], [6, 7, 13, 13]);
+    }
+
+    #[test]
     fn clear() {
         let code = gen(|ctx| {
             ctx.cell(3).clear();
