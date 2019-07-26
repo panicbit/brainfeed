@@ -203,6 +203,22 @@ impl<'c> Context<'c> {
         })
     }
 
+    pub fn multiply(&mut self, a: isize, b: isize, target: isize) {
+        self.copy(b, target);
+        self.multiply_assign(a, target);
+    }
+
+    pub fn multiply_assign(&mut self, source: isize, target: isize) {
+        assert_ne!(source, target);
+
+        self.with_stack_alloc(|ctx, tmp| {
+            ctx.mov(target, tmp);
+            ctx.repeat_reverse_destructive(tmp, |ctx, _| {
+                ctx.add_assign(source, target);
+            })
+        })
+    }
+
     pub fn mov(&mut self, source: isize, target: isize) {
         if source == target {
             return;
@@ -603,6 +619,20 @@ mod tests {
         });
 
         assert_eq!(mem[..6], [0, 1, 0, 0, 0, 1]);
+    }
+
+    #[test]
+    fn multiply() {
+        let mem = run(|ctx| {
+            ctx.with_stack_alloc4(|ctx, a, b, r1, r2| {
+                ctx.cell(a).set(6);
+                ctx.cell(b).set(7);
+                ctx.multiply(a, b, r1);
+                ctx.multiply(a, b, r2);
+            })
+        });
+
+        assert_eq!(mem[..4], [6, 7, 42, 42]);
     }
 
     #[test]
