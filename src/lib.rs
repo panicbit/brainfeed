@@ -85,6 +85,17 @@ impl<'c> Context<'c> {
         })
     }
 
+    pub fn with_stack_alloc5<F> (&mut self, f: F)
+    where
+        F: FnOnce(&mut Context, isize, isize, isize, isize, isize)
+    {
+        self.with_stack_alloc4(|ctx, ptr1, ptr2, ptr3, ptr4|{
+            ctx.with_stack_alloc(|ctx, ptr5| {
+                f(ctx, ptr1, ptr2, ptr3, ptr4, ptr5);
+            })
+        })
+    }
+
     pub fn cell(&mut self, ptr: isize) -> CellContext<'_, 'c> {
         CellContext::new(self, ptr)
     }
