@@ -334,6 +334,11 @@ impl<'c> Context<'c> {
         self.equals_assign(source, target);
     }
 
+    pub fn xor(&mut self, a: isize, b: isize, target: isize) {
+        self.copy(b, target);
+        self.xor_assign(a, target);
+    }
+
     pub fn emit(&mut self, code: &str) {
         self.code.push_str(code);
     }
@@ -564,6 +569,24 @@ mod tests {
         });
 
         assert_eq!(mem[..6], [0, 1, 0, 1, 1, 1]);
+    }
+
+    #[test]
+    fn xor() {
+        let mem = run(|ctx| {
+            ctx.with_stack_alloc2(|ctx, false_, true_| {
+                ctx.with_stack_alloc4(|ctx, a, b, c, d| {
+                    ctx.cell(false_).set_bool(false);
+                    ctx.cell(true_).set_bool(true);
+                    ctx.xor(false_, false_, a);
+                    ctx.xor(false_,  true_, b);
+                    ctx.xor( true_, false_, c);
+                    ctx.xor( true_,  true_, d);
+                })
+            })
+        });
+
+        assert_eq!(mem[..6], [0, 1, 1, 0, 0, 1]);
     }
 
     #[test]
