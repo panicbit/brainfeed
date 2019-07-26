@@ -3,4 +3,11 @@
 [[package]]
 name = "brainfeed"
 version = "0.1.0"
+dependencies = [
+ "minibf 0.1.0",
+]
+
+[[package]]
+name = "minibf"
+version = "0.1.0"
 
