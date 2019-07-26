@@ -306,6 +306,11 @@ impl<'c> Context<'c> {
         });
     }
 
+    pub fn and(&mut self, a: isize, b: isize, target: isize) {
+        self.copy(b, target);
+        self.and_assign(a, target);
+    }
+
     pub fn or_assign(&mut self, source: isize, target: isize) {
         self.with_stack_alloc(|ctx, tmp| {
             ctx.mov(target, tmp);
@@ -559,6 +564,24 @@ mod tests {
         });
 
         assert_eq!(mem[..6], [0, 1, 0, 1, 1, 1]);
+    }
+
+    #[test]
+    fn and() {
+        let mem = run(|ctx| {
+            ctx.with_stack_alloc2(|ctx, false_, true_| {
+                ctx.with_stack_alloc4(|ctx, a, b, c, d| {
+                    ctx.cell(false_).set_bool(false);
+                    ctx.cell(true_).set_bool(true);
+                    ctx.and(false_, false_, a);
+                    ctx.and(false_,  true_, b);
+                    ctx.and( true_, false_, c);
+                    ctx.and( true_,  true_, d);
+                })
+            })
+        });
+
+        assert_eq!(mem[..6], [0, 1, 0, 0, 0, 1]);
     }
 
     #[test]
