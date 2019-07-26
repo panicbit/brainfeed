@@ -1,6 +1,4 @@
 
-mod instruction;
-
 pub struct Context<'c> {
     code: &'c mut String,
     ptr: isize,
