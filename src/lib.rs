@@ -3,6 +3,7 @@ pub struct Context<'c> {
     code: &'c mut String,
     ptr: isize,
     occupied_stack: Vec<bool>,
+    known_values: Vec<Option<u8>>,
 }
 
 impl<'c> Context<'c> {
@@ -15,7 +16,61 @@ impl<'c> Context<'c> {
             code,
             ptr,
             occupied_stack: Vec::new(),
+            known_values: Vec::new(),
         }
+    }
+
+    pub fn forget_known_values(&mut self) {
+        for known_value in &mut self.known_values {
+            *known_value = None;
+        }
+    }
+
+    pub fn map_known_value<F>(&mut self, ptr: isize, f: F)
+    where
+        F: FnOnce(u8) -> u8,
+    {
+        if ptr < 0 {
+            return;
+        }
+
+        self.known_values
+            .get_mut(ptr as usize)
+            .and_then(|value| value.as_mut())
+            .map(|value| *value = f(*value));
+    }
+
+    pub fn assume(&mut self, ptr: isize, value: u8) {
+        if ptr < 0 {
+            return;
+        }
+        let ptr = ptr as usize;
+
+        while ptr >= self.known_values.len() {
+            self.known_values.push(None);
+        }
+
+        self.known_values[ptr] = Some(value);
+    }
+
+    pub fn value(&self, ptr: isize) -> Option<u8> {
+        if ptr < 0 {
+            return None;
+        }
+
+        self.known_values
+            .get(ptr as usize)
+            .and_then(|value| *value)
+    }
+
+    pub fn forget(&mut self, ptr: isize) {
+        if ptr < 0 {
+            return;
+        }
+
+        self.known_values
+            .get_mut(ptr as usize)
+            .map(|value| *value = None);
     }
 
     pub fn stack_alloc(&mut self) -> isize {
@@ -172,6 +227,7 @@ impl<'c> Context<'c> {
     {
         self.seek(ptr);
         self.emit("[");
+        self.forget_known_values();
         f(self);
         self.seek(ptr);
         self.emit("]");
@@ -425,7 +481,6 @@ impl<'c> Context<'c> {
 pub struct CellContext<'ctx, 'c> {
     context: &'ctx mut Context<'c>,
     ptr: isize,
-    current_value: Option<u8>,
 }
 
 impl<'ctx, 'c> CellContext<'ctx, 'c> {
@@ -433,12 +488,11 @@ impl<'ctx, 'c> CellContext<'ctx, 'c> {
         Self {
             context,
             ptr,
-            current_value: None,
         }
     }
 
     pub fn assume(&mut self, value: u8) -> &mut Self {
-        self.current_value = Some(value);
+        self.context.assume(self.ptr, value);
         self
     }
 
@@ -446,7 +500,16 @@ impl<'ctx, 'c> CellContext<'ctx, 'c> {
         debug_assert!(false as u8 == 0);
         debug_assert!(true as u8 == 1);
 
-        self.current_value = Some(value as u8);
+        self.assume(value as u8);
+        self
+    }
+
+    pub fn value(&self) -> Option<u8> {
+        self.context.value(self.ptr)
+    }
+
+    pub fn forget(&mut self) -> &mut Self {
+        self.context.forget(self.ptr);
         self
     }
 
@@ -463,12 +526,12 @@ impl<'ctx, 'c> CellContext<'ctx, 'c> {
     where
         F: FnOnce(u8) -> u8,
     {
-        self.current_value = self.current_value.map(f);
+        self.context.map_known_value(self.ptr, f);
         self
     }
 
     pub fn clear(&mut self) -> &mut Self {
-        if self.current_value == Some(0) {
+        if self.value() == Some(0) {
             return self;
         }
 
@@ -478,7 +541,7 @@ impl<'ctx, 'c> CellContext<'ctx, 'c> {
     }
 
     pub fn set(&mut self, value: u8) -> &mut Self {
-        if self.current_value == Some(value) {
+        if self.value() == Some(value) {
             return self;
         }
 
@@ -491,7 +554,7 @@ impl<'ctx, 'c> CellContext<'ctx, 'c> {
         debug_assert!(false as u8 == 0);
         debug_assert!(true as u8 == 1);
 
-        match self.current_value {
+        match self.value() {
             Some(0) => self.increment(),
             Some(1) => self.decrement(),
             _ => self.set(value as u8),
@@ -529,7 +592,7 @@ impl<'ctx, 'c> CellContext<'ctx, 'c> {
 
     pub fn read(&mut self) -> &mut Self {
         self.seek();
-        self.current_value = None;
+        self.forget();
         self.emit(",")
     }
 }
