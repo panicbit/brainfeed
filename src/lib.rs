@@ -796,7 +796,7 @@ mod tests {
                 ctx.cell(a).set(6);
                 ctx.cell(b).set(7);
                 ctx.add(a, b, r1);
-                ctx.add(a, b, r2);
+                ctx.add(b, a, r2);
             })
         });
 
