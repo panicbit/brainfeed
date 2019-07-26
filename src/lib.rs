@@ -320,6 +320,11 @@ impl<'c> Context<'c> {
         });
     }
 
+    pub fn or(&mut self, a: isize, b: isize, target: isize) {
+        self.copy(b, target);
+        self.or_assign(a, target);
+    }
+
     pub fn xor_assign(&mut self, source: isize, target: isize) {
         self.equals_assign(source, target);
     }
