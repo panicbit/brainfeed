@@ -190,9 +190,8 @@ impl<'c> Context<'c> {
     }
 
     pub fn add(&mut self, a: isize, b: isize, target: isize) {
-        self.clear(target);
+        self.copy(b, target);
         self.add_assign(a, target);
-        self.add_assign(b, target);
     }
 
     pub fn add_assign(&mut self, source: isize, target: isize) {
