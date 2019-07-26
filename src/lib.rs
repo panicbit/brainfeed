@@ -292,6 +292,33 @@ impl<'c> Context<'c> {
         })
     }
 
+    pub fn greater_than_assign(&mut self, source: isize, target: isize) {
+        self.with_stack_alloc4(|ctx, tmp, tmp_is_zero, target_is_zero, neither_is_zero| {
+            ctx.copy(source, tmp);
+
+            ctx.is_zero(tmp, tmp_is_zero);
+            ctx.is_zero(target, target_is_zero);
+            ctx.nor(tmp_is_zero, target_is_zero, neither_is_zero);
+
+            ctx.while_true(neither_is_zero, |ctx| {
+                ctx.decrement(tmp);
+                ctx.decrement(target);
+
+                ctx.is_zero(tmp, tmp_is_zero);
+                ctx.is_zero(target, target_is_zero);
+                ctx.nor(tmp_is_zero, target_is_zero, neither_is_zero);
+            });
+
+            target
+            ctx.and_not(target_is_zero, tmp_is_zero, target);
+        })
+    }
+
+    pub fn greater_than(&mut self, a: isize, b: isize, target: isize) {
+        self.copy(b, target);
+        self.greater_than_assign(a, target);
+    }
+
     pub fn not_equals_assign(&mut self, source: isize, target: isize) {
         self.equals_assign(source, target);
         self.not(target);
@@ -681,6 +708,21 @@ mod tests {
         });
 
         assert_eq!(mem[..4], [6, 7, 13, 13]);
+    }
+
+    #[test]
+    fn greater_than() {
+        let mem = run(|ctx| {
+            ctx.with_stack_alloc5(|ctx, a, b, r1, r2, r3| {
+                ctx.cell(a).set(6);
+                ctx.cell(b).set(10);
+                ctx.greater_than(a, b, r1);
+                ctx.greater_than(b, a, r2);
+                ctx.greater_than(a, a, r3);
+            })
+        });
+
+        assert_eq!(mem[..5], [6, 10, 0, 1, 0]);
     }
 
     #[test]
