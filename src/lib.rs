@@ -177,6 +177,14 @@ impl<'c> Context<'c> {
         self.emit("]");
     }
 
+    pub fn while_true<F>(&mut self, cond: isize, f: F)
+    where
+        F: FnOnce(&mut Context),
+    {
+        self.while_not_null(cond, f);
+    }
+
+
     /// Runs the code emitted by `f` `*ptr` many times.
     /// Sideffect: *ptr = 0
     pub fn repeat_reverse_destructive<F> (&mut self, counter: isize, f: F)
