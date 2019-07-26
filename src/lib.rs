@@ -354,6 +354,11 @@ impl<'c> Context<'c> {
     }
 
     pub fn greater_than_assign(&mut self, source: isize, target: isize) {
+        if let (Some(source_val), Some(target_val)) = (self.value(source), self.value(target)) {
+            self.cell(target).set_bool(source_val > target_val);
+            return;
+        }
+
         self.with_stack_alloc4(|ctx, tmp, tmp_is_zero, target_is_zero, neither_is_zero| {
             ctx.copy(source, tmp);
 
@@ -375,6 +380,10 @@ impl<'c> Context<'c> {
     }
 
     pub fn greater_than(&mut self, a: isize, b: isize, target: isize) {
+        if let (Some(a), Some(b)) = (self.value(a), self.value(b)) {
+            self.cell(target).set_bool(a > b);
+            return;
+        }
         self.copy(b, target);
         self.greater_than_assign(a, target);
     }
