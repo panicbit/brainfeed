@@ -277,6 +277,23 @@ impl<'c> Context<'c> {
         })
     }
 
+    pub fn subtract_assign(&mut self, source: isize, target: isize) {
+        assert_ne!(source, target);
+
+        self.with_stack_alloc(|ctx, tmp| {
+            ctx.copy(source, tmp);
+            ctx.repeat_reverse_destructive(target, |ctx, _| {
+                ctx.decrement(tmp);
+            });
+            ctx.mov(tmp, target);
+        })
+    }
+
+    pub fn subtract(&mut self, a: isize, b: isize, target: isize) {
+        self.copy(b, target);
+        self.subtract_assign(a, target);
+    }
+
     pub fn multiply(&mut self, a: isize, b: isize, target: isize) {
         self.copy(b, target);
         self.multiply_assign(a, target);
@@ -784,6 +801,20 @@ mod tests {
         });
 
         assert_eq!(mem[..4], [6, 7, 13, 13]);
+    }
+
+    #[test]
+    fn subtract() {
+        let mem = run(|ctx| {
+            ctx.with_stack_alloc4(|ctx, a, b, r1, r2| {
+                ctx.cell(a).set(7);
+                ctx.cell(b).set(3);
+                ctx.subtract(a, b, r1);
+                ctx.subtract(b, a, r2);
+            })
+        });
+
+        assert_eq!(mem[..4], [7, 3, 4, 252]);
     }
 
     #[test]
