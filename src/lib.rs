@@ -309,7 +309,6 @@ impl<'c> Context<'c> {
                 ctx.nor(tmp_is_zero, target_is_zero, neither_is_zero);
             });
 
-            target
             ctx.and_not(target_is_zero, tmp_is_zero, target);
         })
     }
