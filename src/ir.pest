@@ -1,0 +1,36 @@
+ir = _{ SOI ~ (stmt)* ~ EOI }
+
+stmt = {
+	  stmt_decl
+	| stmt_assign
+    | stmt_while
+    | stmt_if
+}
+stmt_decl = { "let" ~ ident ~ ("=" ~ expr)? }
+stmt_assign = { ident ~ "=" ~ expr }
+stmt_while = { "while" ~ expr ~ "{" ~ stmt* ~ "}" }
+stmt_if = { "if" ~ expr ~ "{" ~ stmt* ~ "}" }
+
+expr = { term ~ (op ~ term)* }
+expr_const = @{ number }
+expr_var = { ident }
+
+term = _{
+	  expr_const
+    | expr_var
+    | "(" ~ expr ~ ")"
+}
+op = {
+	  op_add
+    | op_sub
+    | op_gt
+}
+op_add = { "+" }
+op_sub = { "-" }
+op_gt = { ">" }
+
+number = @{ ASCII_DIGIT+ }
+
+ident = @{ ASCII_ALPHA ~ (ASCII_ALPHA | "_")* }
+
+WHITESPACE = _{ " " | "\n" | "\t" }
