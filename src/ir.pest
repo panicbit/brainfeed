@@ -12,7 +12,7 @@ stmt_while = { "while" ~ expr ~ "{" ~ stmt* ~ "}" }
 stmt_if = { "if" ~ expr ~ "{" ~ stmt* ~ "}" }
 
 expr = { term ~ (op ~ term)* }
-expr_const = @{ number }
+expr_const = { number }
 expr_var = { ident }
 
 term = _{
