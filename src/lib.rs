@@ -265,6 +265,8 @@ impl<'c> Context<'c> {
     }
 
     pub fn add(&mut self, a: isize, b: isize, target: isize) {
+        assert_ne!(a, target);
+        assert_ne!(b, target);
         self.copy(b, target);
         self.add_assign(a, target);
     }
@@ -290,11 +292,15 @@ impl<'c> Context<'c> {
     }
 
     pub fn subtract(&mut self, a: isize, b: isize, target: isize) {
+        assert_ne!(a, target);
+        assert_ne!(b, target);
         self.copy(b, target);
         self.subtract_assign(a, target);
     }
 
     pub fn multiply(&mut self, a: isize, b: isize, target: isize) {
+        assert_ne!(a, target);
+        assert_ne!(b, target);
         self.copy(b, target);
         self.multiply_assign(a, target);
     }
@@ -452,6 +458,8 @@ impl<'c> Context<'c> {
     }
 
     pub fn and(&mut self, a: isize, b: isize, target: isize) {
+        assert_ne!(a, target);
+        assert_ne!(b, target);
         self.copy(b, target);
         self.and_assign(a, target);
     }
@@ -477,6 +485,8 @@ impl<'c> Context<'c> {
     }
 
     pub fn or(&mut self, a: isize, b: isize, target: isize) {
+        assert_ne!(a, target);
+        assert_ne!(b, target);
         self.copy(b, target);
         self.or_assign(a, target);
     }
@@ -487,6 +497,8 @@ impl<'c> Context<'c> {
     }
 
     pub fn nor(&mut self, a: isize, b: isize, target: isize) {
+        assert_ne!(a, target);
+        assert_ne!(b, target);
         self.copy(b, target);
         self.nor_assign(a, target);
     }
@@ -496,6 +508,8 @@ impl<'c> Context<'c> {
     }
 
     pub fn xor(&mut self, a: isize, b: isize, target: isize) {
+        assert_ne!(a, target);
+        assert_ne!(b, target);
         self.copy(b, target);
         self.xor_assign(a, target);
     }
