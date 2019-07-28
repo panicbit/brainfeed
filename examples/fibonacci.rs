@@ -10,9 +10,9 @@ fn main() {
         ctx.cell(i).increment_by(nth_fib);
 
         ctx.repeat_reverse_destructive(i, |ctx, _| {
-            ctx.copy(current, tmp);
-            ctx.add_assign(next, current);
-            ctx.mov(tmp, next);
+            ctx.mov(current, tmp);
+            ctx.copy(next, current);
+            ctx.add(next, tmp);
         });
 
         ctx.clear(next);
