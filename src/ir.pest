@@ -20,7 +20,7 @@ term = _{
     | expr_var
     | "(" ~ expr ~ ")"
 }
-op = {
+op = _{
 	  op_add
     | op_sub
     | op_gt
