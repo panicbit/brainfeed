@@ -285,24 +285,19 @@ impl<'c> Context<'c> {
         });
     }
 
-    pub fn multiply(&mut self, a: isize, b: isize, target: isize) {
-        assert_ne!(a, target);
-        assert_ne!(b, target);
-        self.copy(b, target);
-        self.multiply_assign(a, target);
-    }
-
-    pub fn multiply_assign(&mut self, source: isize, target: isize) {
+    /// target = target * source;
+    pub fn mul(&mut self, target: isize, source: isize) {
         assert_ne!(source, target);
 
-        self.with_stack_alloc(|ctx, tmp| {
-            ctx.mov(target, tmp);
-            ctx.repeat_reverse_destructive(tmp, |ctx, _| {
-                ctx.with_stack_alloc(|ctx, tmp| {
-                    ctx.copy(source, tmp);
-                    ctx.add(target, tmp);
-                })
-            })
+        self.with_stack_alloc2(|ctx, product, tmp| {
+            ctx.clear(product);
+
+            ctx.repeat_reverse_destructive(target, |ctx, _| {
+                ctx.copy(source, tmp);
+                ctx.add(product, tmp);
+            });
+
+            ctx.mov(product, target);
         })
     }
 
@@ -780,20 +775,6 @@ mod tests {
     }
 
     #[test]
-    fn multiply() {
-        let mem = run(|ctx| {
-            ctx.with_stack_alloc4(|ctx, a, b, r1, r2| {
-                ctx.cell(a).set(6);
-                ctx.cell(b).set(7);
-                ctx.multiply(a, b, r1);
-                ctx.multiply(a, b, r2);
-            })
-        });
-
-        assert_eq!(mem[..4], [6, 7, 42, 42]);
-    }
-
-    #[test]
     fn add() {
         let mem = run(|ctx| {
             ctx.with_stack_alloc4(|ctx, a, b, c, d| {
@@ -808,6 +789,23 @@ mod tests {
 
         assert_eq!(mem[..4], [13, 0, 0, 17]);
     }
+
+    #[test]
+    fn mul() {
+        let mem = run(|ctx| {
+            ctx.with_stack_alloc4(|ctx, a, b, c, d| {
+                ctx.cell(a).set(6);
+                ctx.cell(b).set(7);
+                ctx.cell(c).set(8);
+                ctx.cell(d).set(9);
+                ctx.mul(a, b);
+                ctx.mul(d, c);
+            })
+        });
+
+        assert_eq!(mem[..4], [42, 7, 8, 72]);
+    }
+
 
     #[test]
     fn sub() {
