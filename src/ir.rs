@@ -184,6 +184,16 @@ impl Expr {
             rule => Err(format!("BUG: Unhandled op rule: {:?}", rule))?,
         })
     }
+
+    pub fn const_value(&self) -> Option<u8> {
+        Some(match self {
+            Expr::Const(n) => *n,
+            Expr::Var(_) => return None,
+            Expr::Add(a, b) => a.const_value()?.wrapping_add(b.const_value()?),
+            Expr::Sub(a, b) => a.const_value()?.wrapping_sub(b.const_value()?),
+            Expr::Gt(a, b) => (a.const_value()? > b.const_value()?) as u8,
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
