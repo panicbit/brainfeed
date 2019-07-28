@@ -1,6 +1,7 @@
 #[macro_use] extern crate lazy_static;
 
 pub mod ir;
+pub mod trans;
 
 pub struct Context<'c> {
     code: &'c mut String,
