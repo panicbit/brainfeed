@@ -267,6 +267,7 @@ impl<'c> Context<'c> {
         })
     }
 
+    /// target = target + source; source = 0;
     pub fn add(&mut self, target: isize, source: isize) {
         assert_ne!(source, target);
 
@@ -275,23 +276,13 @@ impl<'c> Context<'c> {
         });
     }
 
-    pub fn subtract_assign(&mut self, source: isize, target: isize) {
+    /// target = target - source; source = 0;
+    pub fn sub(&mut self, target: isize, source: isize) {
         assert_ne!(source, target);
 
-        self.with_stack_alloc(|ctx, tmp| {
-            ctx.copy(source, tmp);
-            ctx.repeat_reverse_destructive(target, |ctx, _| {
-                ctx.decrement(tmp);
-            });
-            ctx.mov(tmp, target);
-        })
-    }
-
-    pub fn subtract(&mut self, a: isize, b: isize, target: isize) {
-        assert_ne!(a, target);
-        assert_ne!(b, target);
-        self.copy(b, target);
-        self.subtract_assign(a, target);
+        self.repeat_reverse_destructive(source, |ctx, _| {
+            ctx.cell(target).decrement();
+        });
     }
 
     pub fn multiply(&mut self, a: isize, b: isize, target: isize) {
@@ -819,17 +810,19 @@ mod tests {
     }
 
     #[test]
-    fn subtract() {
+    fn sub() {
         let mem = run(|ctx| {
-            ctx.with_stack_alloc4(|ctx, a, b, r1, r2| {
-                ctx.cell(a).set(7);
-                ctx.cell(b).set(3);
-                ctx.subtract(a, b, r1);
-                ctx.subtract(b, a, r2);
+            ctx.with_stack_alloc4(|ctx, a, b, c, d| {
+                ctx.cell(a).set(9);
+                ctx.cell(b).set(8);
+                ctx.cell(c).set(6);
+                ctx.cell(d).set(7);
+                ctx.sub(a, b);
+                ctx.sub(d, c);
             })
         });
 
-        assert_eq!(mem[..4], [7, 3, 4, 252]);
+        assert_eq!(mem[..4], [1, 0, 0, 1]);
     }
 
     #[test]
