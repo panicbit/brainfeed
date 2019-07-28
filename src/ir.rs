@@ -7,14 +7,14 @@ use std::ops::Deref;
 #[grammar = "ir.pest"]
 struct Parser;
 
-pub type Result<T, E = Error> = std::result::Result<T, E>;
+pub type Result<T = (), E = Error> = std::result::Result<T, E>;
 pub type Error = Box<std::error::Error>;
 pub type Pair<'a, R = Rule> = pest::iterators::Pair<'a, R>;
 pub type Pairs<'a, R = Rule> = pest::iterators::Pairs<'a, R>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct IR {
-    code: Vec<Statement>,
+    pub stmts: Vec<Statement>,
 }
 
 impl IR {
@@ -22,7 +22,7 @@ impl IR {
         let pairs = Parser::parse(Rule::ir, code)?.into_iter();
 
         Ok(Self {
-            code: pairs
+            stmts: pairs
                 .filter(|pair| pair.as_rule() != Rule::EOI)
                 .map(Statement::parse)
                 .collect::<Result<_>>()?,
@@ -30,7 +30,7 @@ impl IR {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Statement {
     Decl(Decl),
     Assign(Assign),
@@ -54,10 +54,10 @@ impl Statement {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Decl {
-    name: Ident,
-    value: Option<Expr>,
+    pub name: Ident,
+    pub value: Option<Expr>,
 }
 
 impl Decl {
@@ -73,10 +73,10 @@ impl Decl {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Assign {
-    name: Ident,
-    value: Expr,
+    pub name: Ident,
+    pub value: Expr,
 }
 
 impl Assign {
@@ -92,10 +92,10 @@ impl Assign {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct While {
-    cond: Expr,
-    body: Vec<Statement>,
+    pub cond: Expr,
+    pub body: Vec<Statement>,
 }
 
 impl While {
@@ -111,10 +111,10 @@ impl While {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct If {
-    cond: Expr,
-    body: Vec<Statement>,
+    pub cond: Expr,
+    pub body: Vec<Statement>,
 }
 
 impl If {
@@ -142,7 +142,7 @@ lazy_static! {
     };
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Const(u8),
     Var(Ident),
@@ -174,8 +174,6 @@ impl Expr {
     }
 
     fn parse_op(lhs: Result<Expr>, op: Pair, rhs: Result<Expr>) -> Result<Self> {
-        ensure_rule(&op, Rule::op)?;
-
         let lhs = Box::new(lhs?);
         let rhs = Box::new(rhs?);
 
@@ -188,7 +186,7 @@ impl Expr {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Ident(String);
 
 impl Ident {
@@ -207,7 +205,7 @@ impl Deref for Ident {
     }
 }
 
-fn ensure_rule(pair: &Pair, rule: Rule) -> Result<()> {
+fn ensure_rule(pair: &Pair, rule: Rule) -> Result {
     if pair.as_rule() != rule {
         Err(format!("BUG: Expected {:?}, found {:?}", rule, pair.as_rule()))?;
     }
