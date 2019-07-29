@@ -694,7 +694,7 @@ mod tests {
         let mem = run(|ctx| {
             ctx.with_stack_alloc2(|ctx, a, b| {
                 ctx.set_bool(a, false);
-                ctx.set_bool(a, true);
+                ctx.set_bool(b, true);
                 ctx.not(a);
                 ctx.not(b);
             })
