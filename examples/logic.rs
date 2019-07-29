@@ -5,8 +5,8 @@ fn main() {
     let mut ctx = Context::new(&mut code);
 
     ctx.with_stack_alloc3(|ctx, a, b, res| {
-        ctx.cell(a).set_bool(true);
-        ctx.cell(b).set_bool(true);
+        ctx.set_bool(a, true);
+        ctx.set_bool(b, true);
         ctx.copy(a, res);
         ctx.xor_assign(b, res);
     });

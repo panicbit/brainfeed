@@ -6,8 +6,8 @@ fn main() {
     let mut ctx = Context::new(&mut code);
 
     ctx.with_stack_alloc4(|ctx, current, next, i, tmp| {
-        ctx.cell(next).increment_by(1);
-        ctx.cell(i).increment_by(nth_fib);
+        ctx.increment_by(next, 1);
+        ctx.increment_by(i, nth_fib);
 
         ctx.repeat_reverse_destructive(i, |ctx, _| {
             ctx.mov(current, tmp);

@@ -1,25 +1,76 @@
 #[macro_use] extern crate lazy_static;
 
+use std::sync::{Arc, Weak};
+use std::ops;
+use std::cmp;
+
 pub mod ir;
 pub mod trans;
 
+#[derive(Debug,Clone,PartialEq,PartialOrd)]
+pub struct Ptr(Arc<isize>);
+
+impl Ptr {
+    fn new(addr: isize) -> Self {
+        Ptr(Arc::new(addr))
+    }
+
+    fn as_isize(&self) -> isize {
+        *self.0
+    }
+
+    fn weak(&self) -> Weak<isize> {
+        Arc::downgrade(&self.0)
+    }
+}
+
+impl<'a> ops::Add for &'a Ptr {
+    type Output = Ptr;
+
+    fn add(self, other: Self) -> Ptr {
+        let addr = self.as_isize() + other.as_isize();
+        Ptr::new(addr)
+    }
+}
+
+impl<'a> ops::Sub for &'a Ptr {
+    type Output = Ptr;
+
+    fn sub(self, other: Self) -> Ptr {
+        let addr = self.as_isize() - other.as_isize();
+        Ptr::new(addr)
+    }
+}
+
+impl<'a> cmp::PartialEq<isize> for &'a Ptr {
+    fn eq(&self, addr: &isize) -> bool {
+        &self.as_isize() == addr
+    }
+}
+
+impl<'a> cmp::PartialOrd<isize> for &'a Ptr {
+    fn partial_cmp(&self, addr: &isize) -> Option<cmp::Ordering> {
+        self.as_isize().partial_cmp(addr)
+    }
+}
+
 pub struct Context<'c> {
     code: &'c mut String,
-    ptr: isize,
-    occupied_stack: Vec<bool>,
+    addr: isize,
+    stack_pointers: Vec<Weak<isize>>,
     known_values: Vec<Option<u8>>,
 }
 
 impl<'c> Context<'c> {
     pub fn new(code: &'c mut String) -> Self {
-        Self::with_ptr(code, 0)
+        Self::with_addr(code, 0)
     }
 
-    pub fn with_ptr(code: &'c mut String, ptr: isize) -> Self {
+    pub fn with_addr(code: &'c mut String, addr: isize) -> Self {
         Self {
             code,
-            ptr,
-            occupied_stack: Vec::new(),
+            addr,
+            stack_pointers: Vec::new(),
             known_values: Vec::new(),
         }
     }
@@ -30,7 +81,7 @@ impl<'c> Context<'c> {
         }
     }
 
-    pub fn map_known_value<F>(&mut self, ptr: isize, f: F)
+    pub fn map_known_value<F>(&mut self, ptr: &Ptr, f: F)
     where
         F: FnOnce(u8) -> u8,
     {
@@ -39,81 +90,79 @@ impl<'c> Context<'c> {
         }
 
         self.known_values
-            .get_mut(ptr as usize)
+            .get_mut(ptr.as_isize() as usize)
             .and_then(|value| value.as_mut())
             .map(|value| *value = f(*value));
     }
 
-    pub fn assume(&mut self, ptr: isize, value: u8) {
+    pub fn assume(&mut self, ptr: &Ptr, value: u8) {
         if ptr < 0 {
             return;
         }
-        let ptr = ptr as usize;
 
-        while ptr >= self.known_values.len() {
+        let addr = ptr.as_isize() as usize;
+
+        while addr >= self.known_values.len() {
             self.known_values.push(None);
         }
 
-        self.known_values[ptr] = Some(value);
+        self.known_values[addr] = Some(value);
     }
 
-    pub fn value(&self, ptr: isize) -> Option<u8> {
+    pub fn assume_bool(&mut self, ptr: &Ptr, value: bool) {
+        debug_assert!(false as u8 == 0);
+        debug_assert!(true as u8 == 1);
+
+        self.assume(ptr, value as u8);
+    }
+
+    pub fn value(&self, ptr: &Ptr) -> Option<u8> {
         if ptr < 0 {
             return None;
         }
 
         self.known_values
-            .get(ptr as usize)
+            .get(ptr.as_isize() as usize)
             .and_then(|value| *value)
     }
 
-    pub fn forget(&mut self, ptr: isize) {
+    pub fn forget(&mut self, ptr: &Ptr) {
         if ptr < 0 {
             return;
         }
 
         self.known_values
-            .get_mut(ptr as usize)
+            .get_mut(ptr.as_isize() as usize)
             .map(|value| *value = None);
     }
 
-    pub fn stack_alloc(&mut self) -> isize {
-        match self.occupied_stack.iter().position(|occupied| !occupied) {
-            Some(ptr) => {
-                self.occupied_stack[ptr] = true;
-                ptr as isize
+    pub fn stack_alloc(&mut self) -> Ptr {
+        match self.stack_pointers.iter().position(|ptr| ptr.upgrade().is_none()) {
+            Some(addr) => {
+                let ptr = Ptr(Arc::new(addr as isize));
+                self.stack_pointers[addr] = ptr.weak();
+                ptr
             },
             None => {
-                self.occupied_stack.push(true);
-                let ptr = self.occupied_stack.len() - 1;
-                ptr as isize
+                let addr = self.stack_pointers.len();
+                let ptr = Ptr(Arc::new(addr as isize));
+                self.stack_pointers.push(ptr.weak());
+                ptr
             }
         }
     }
 
-    pub fn stack_free(&mut self, ptr: isize) {
-        assert!(ptr >= 0);
-
-        let ptr = ptr as usize;
-
-        assert!(ptr < self.occupied_stack.len());
-        assert!(self.occupied_stack[ptr]);
-
-        self.occupied_stack[ptr] = false;
-    }
-
     pub fn with_stack_alloc<F> (&mut self, f: F)
     where
-        F: FnOnce(&mut Context, isize)
+        F: FnOnce(&mut Context, &Ptr)
     {
         let ptr = self.stack_alloc();
-        f(self, ptr);
-        self.stack_free(ptr);
+        f(self, &ptr);
     }
 
     pub fn with_stack_alloc2<F> (&mut self, f: F)
     where
-        F: FnOnce(&mut Context, isize, isize)
+        F: FnOnce(&mut Context, &Ptr, &Ptr)
     {
         self.with_stack_alloc(|ctx, ptr1|{
             ctx.with_stack_alloc(|ctx, ptr2| {
@@ -124,7 +173,7 @@ impl<'c> Context<'c> {
 
     pub fn with_stack_alloc3<F> (&mut self, f: F)
     where
-        F: FnOnce(&mut Context, isize, isize, isize)
+        F: FnOnce(&mut Context, &Ptr, &Ptr, &Ptr)
     {
         self.with_stack_alloc2(|ctx, ptr1, ptr2|{
             ctx.with_stack_alloc(|ctx, ptr3| {
@@ -135,7 +184,7 @@ impl<'c> Context<'c> {
 
     pub fn with_stack_alloc4<F> (&mut self, f: F)
     where
-        F: FnOnce(&mut Context, isize, isize, isize, isize)
+        F: FnOnce(&mut Context, &Ptr, &Ptr, &Ptr, &Ptr)
     {
         self.with_stack_alloc3(|ctx, ptr1, ptr2, ptr3|{
             ctx.with_stack_alloc(|ctx, ptr4| {
@@ -146,7 +195,7 @@ impl<'c> Context<'c> {
 
     pub fn with_stack_alloc5<F> (&mut self, f: F)
     where
-        F: FnOnce(&mut Context, isize, isize, isize, isize, isize)
+        F: FnOnce(&mut Context, &Ptr, &Ptr, &Ptr, &Ptr, &Ptr)
     {
         self.with_stack_alloc4(|ctx, ptr1, ptr2, ptr3, ptr4|{
             ctx.with_stack_alloc(|ctx, ptr5| {
@@ -155,39 +204,89 @@ impl<'c> Context<'c> {
         })
     }
 
-    pub fn cell(&mut self, ptr: isize) -> CellContext<'_, 'c> {
-        CellContext::new(self, ptr)
-    }
-
-    fn seek(&mut self, ptr: isize) {
-        let offset = ptr - self.ptr;
+    fn seek(&mut self, ptr: &Ptr) {
+        let offset = ptr.as_isize() - self.addr;
         let direction = if offset.is_positive() { ">" } else { "<" };
         let offset = offset.abs() as usize;
 
         self.emit(&direction.repeat(offset));
-        self.ptr = ptr;
+        self.addr = ptr.as_isize();
     }
 
-    pub fn clear(&mut self, ptr: isize) {
-        self.cell(ptr).clear();
+    pub fn clear(&mut self, ptr: &Ptr) {
+        if self.value(ptr) == Some(0) {
+            return;
+        }
+
+        self.seek(ptr);
+        self.emit("[-]");
+        self.assume(ptr, 0);
     }
 
-    pub fn increment(&mut self, ptr: isize) {
-        self.cell(ptr).increment();
+    pub fn set(&mut self, ptr: &Ptr, value: u8) {
+        if self.value(ptr) == Some(value) {
+            return;
+        }
+
+        self.seek(ptr);
+        self.clear(ptr);
+        self.increment_by(ptr, value);
     }
 
-    pub fn decrement(&mut self, ptr: isize) {
-        self.cell(ptr).decrement();
+    pub fn set_bool(&mut self, ptr: &Ptr, value: bool) {
+        debug_assert!(false as u8 == 0);
+        debug_assert!(true as u8 == 1);
+
+        match self.value(ptr) {
+            Some(0) => self.increment(ptr),
+            Some(1) => self.decrement(ptr),
+            _ => self.set(ptr, value as u8),
+        }
     }
 
-    pub fn iff<F>(&mut self, cond: isize, f: F)
+    pub fn print(&mut self, ptr: &Ptr) {
+        self.seek(ptr);
+        self.emit(".");
+    }
+
+    pub fn read(&mut self, ptr: &Ptr) {
+        self.seek(ptr);
+        self.forget(ptr);
+        self.emit(",");
+    }
+
+    pub fn increment(&mut self, ptr: &Ptr) {
+        self.seek(ptr);
+        self.emit("+");
+        self.map_known_value(ptr, |v| v + 1)
+    }
+
+    pub fn increment_by(&mut self, ptr: &Ptr, amount: u8) {
+        self.seek(ptr);
+        self.emit(&"+".repeat(amount as usize));
+        self.map_known_value(ptr, |v| v + amount)
+    }
+
+    pub fn decrement(&mut self, ptr: &Ptr) {
+        self.seek(ptr);
+        self.emit("-");
+        self.map_known_value(ptr, |v| v - 1)
+    }
+
+    pub fn decrement_by(&mut self, ptr: &Ptr, amount: u8) {
+        self.seek(ptr);
+        self.emit(&"-".repeat(amount as usize));
+        self.map_known_value(ptr, |v| v - amount)
+    }
+
+    pub fn iff<F>(&mut self, cond: &Ptr, f: F)
     where
         F: FnOnce(&mut Context),
     {
         self.repeat_reverse(cond, |ctx, _| f(ctx));
     }
 
-    pub fn if_not<F>(&mut self, cond: isize, f: F)
+    pub fn if_not<F>(&mut self, cond: &Ptr, f: F)
     where
         F: FnOnce(&mut Context),
     {
@@ -198,7 +297,7 @@ impl<'c> Context<'c> {
         })
     }
 
-    pub fn if_not_destructive<F>(&mut self, cond: isize, f: F)
+    pub fn if_not_destructive<F>(&mut self, cond: &Ptr, f: F)
     where
         F: FnOnce(&mut Context),
     {
@@ -206,14 +305,14 @@ impl<'c> Context<'c> {
         self.iff_destructive(cond, f);
     }
 
-    pub fn iff_destructive<F>(&mut self, cond: isize, f: F)
+    pub fn iff_destructive<F>(&mut self, cond: &Ptr, f: F)
     where
         F: FnOnce(&mut Context),
     {
         self.repeat_reverse_destructive(cond, |ctx, _| f(ctx));
     }
 
-    pub fn if_else<F, G>(&mut self, cond: isize, f: F, g: G)
+    pub fn if_else<F, G>(&mut self, cond: &Ptr, f: F, g: G)
     where
         F: FnOnce(&mut Context),
         G: FnOnce(&mut Context),
@@ -225,7 +324,7 @@ impl<'c> Context<'c> {
         });
     }
 
-    pub fn while_not_zero<F>(&mut self, ptr: isize, f: F)
+    pub fn while_not_zero<F>(&mut self, ptr: &Ptr, f: F)
     where
         F: FnOnce(&mut Context),
     {
@@ -237,7 +336,7 @@ impl<'c> Context<'c> {
         self.emit("]");
     }
 
-    pub fn while_true<F>(&mut self, cond: isize, f: F)
+    pub fn while_true<F>(&mut self, cond: &Ptr, f: F)
     where
         F: FnOnce(&mut Context),
     {
@@ -247,9 +346,9 @@ impl<'c> Context<'c> {
 
     /// Runs the code emitted by `f` `*ptr` many times.
     /// Sideffect: *ptr = 0
-    pub fn repeat_reverse_destructive<F> (&mut self, counter: isize, f: F)
+    pub fn repeat_reverse_destructive<F> (&mut self, counter: &Ptr, f: F)
     where
-        F: FnOnce(&mut Context, isize)
+        F: FnOnce(&mut Context, &Ptr)
     {
         self.while_not_zero(counter, |ctx| {
             f(ctx, counter);
@@ -258,9 +357,9 @@ impl<'c> Context<'c> {
     }
 
     /// Runs the code emitted by `f` `*ptr` many times.
-    pub fn repeat_reverse<F> (&mut self, ptr: isize, f: F)
+    pub fn repeat_reverse<F> (&mut self, ptr: &Ptr, f: F)
     where
-        F: FnOnce(&mut Context, isize)
+        F: FnOnce(&mut Context, &Ptr)
     {
         self.with_stack_alloc(|ctx, counter| {
             ctx.copy(ptr, counter);
@@ -269,25 +368,25 @@ impl<'c> Context<'c> {
     }
 
     /// target = target + source; source = 0;
-    pub fn add(&mut self, target: isize, source: isize) {
+    pub fn add(&mut self, target: &Ptr, source: &Ptr) {
         assert_ne!(source, target);
 
         self.repeat_reverse_destructive(source, |ctx, _| {
-            ctx.cell(target).increment();
+            ctx.increment(target);
         });
     }
 
     /// target = target - source; source = 0;
-    pub fn sub(&mut self, target: isize, source: isize) {
+    pub fn sub(&mut self, target: &Ptr, source: &Ptr) {
         assert_ne!(source, target);
 
         self.repeat_reverse_destructive(source, |ctx, _| {
-            ctx.cell(target).decrement();
+            ctx.decrement(target);
         });
     }
 
     /// target = target * source;
-    pub fn mul(&mut self, target: isize, source: isize) {
+    pub fn mul(&mut self, target: &Ptr, source: &Ptr) {
         assert_ne!(source, target);
 
         self.with_stack_alloc2(|ctx, product, tmp| {
@@ -302,7 +401,7 @@ impl<'c> Context<'c> {
         })
     }
 
-    pub fn mov(&mut self, source: isize, target: isize) {
+    pub fn mov(&mut self, source: &Ptr, target: &Ptr) {
         if source == target {
             return;
         }
@@ -315,37 +414,39 @@ impl<'c> Context<'c> {
         })
     }
 
-    pub fn is_zero_destructive(&mut self, value: isize) {
+    pub fn is_zero_destructive(&mut self, value: &Ptr) {
         self.with_stack_alloc(|ctx, is_zero| {
-            ctx.cell(is_zero).set_bool(true);
+            ctx.set_bool(is_zero, true);
 
             ctx.while_not_zero(value, |ctx| {
-                ctx.cell(is_zero).assume_bool(true).set_bool(false);
-                ctx.cell(value).set_bool(false);
+                ctx.assume_bool(is_zero, true);
+                ctx.set_bool(is_zero, false);
+                ctx.set_bool(value, false);
             });
 
             ctx.iff_destructive(is_zero, |ctx| {
-                ctx.cell(value).assume_bool(false).set_bool(true);
+                ctx.assume_bool(value, false);
+                ctx.set_bool(value, true);
             })
         })
     }
 
-    pub fn is_zero(&mut self, source: isize, target: isize) {
+    pub fn is_zero(&mut self, source: &Ptr, target: &Ptr) {
         self.copy(source, target);
         self.is_zero_destructive(target);
     }
 
-    pub fn is_not_zero_destructive(&mut self, value: isize) {
+    pub fn is_not_zero_destructive(&mut self, value: &Ptr) {
         self.is_zero_destructive(value);
         self.not(value);
     }
 
-    pub fn is_not_zero(&mut self, source: isize, target: isize) {
+    pub fn is_not_zero(&mut self, source: &Ptr, target: &Ptr) {
         self.is_zero(source, target);
         self.not(target);
     }
 
-    pub fn equals_assign(&mut self, source: isize, target: isize) {
+    pub fn equals_assign(&mut self, source: &Ptr, target: &Ptr) {
         self.with_stack_alloc(|ctx, tmp| {
             ctx.copy(source, tmp);
             
@@ -357,14 +458,14 @@ impl<'c> Context<'c> {
         })
     }
 
-    pub fn equals(&mut self, a: isize, b: isize, target: isize) {
+    pub fn equals(&mut self, a: &Ptr, b: &Ptr, target: &Ptr) {
         self.copy(b, target);
         self.equals_assign(a, target);
     }
 
-    pub fn greater_than_assign(&mut self, source: isize, target: isize) {
+    pub fn greater_than_assign(&mut self, source: &Ptr, target: &Ptr) {
         if let (Some(source_val), Some(target_val)) = (self.value(source), self.value(target)) {
-            self.cell(target).set_bool(source_val > target_val);
+            self.set_bool(target, source_val > target_val);
             return;
         }
 
@@ -388,21 +489,21 @@ impl<'c> Context<'c> {
         })
     }
 
-    pub fn greater_than(&mut self, a: isize, b: isize, target: isize) {
+    pub fn greater_than(&mut self, a: &Ptr, b: &Ptr, target: &Ptr) {
         if let (Some(a), Some(b)) = (self.value(a), self.value(b)) {
-            self.cell(target).set_bool(a > b);
+            self.set_bool(target, a > b);
             return;
         }
         self.copy(b, target);
         self.greater_than_assign(a, target);
     }
 
-    pub fn not_equals_assign(&mut self, source: isize, target: isize) {
+    pub fn not_equals_assign(&mut self, source: &Ptr, target: &Ptr) {
         self.equals_assign(source, target);
         self.not(target);
     }
 
-    pub fn copy(&mut self, source: isize, target: isize) {
+    pub fn copy(&mut self, source: &Ptr, target: &Ptr) {
         if source == target {
             return;
         }
@@ -417,9 +518,9 @@ impl<'c> Context<'c> {
         })
     }
 
-    pub fn not(&mut self, cond: isize) {
+    pub fn not(&mut self, cond: &Ptr) {
         self.with_stack_alloc(|ctx, is_false| {
-            ctx.cell(is_false).set(1);
+            ctx.set(is_false, 1);
 
             ctx.repeat_reverse_destructive(cond, |ctx, _| {
                 ctx.decrement(is_false);
@@ -431,69 +532,70 @@ impl<'c> Context<'c> {
         })
     }
 
-    pub fn and_assign(&mut self, source: isize, target: isize) {
+    pub fn and_assign(&mut self, source: &Ptr, target: &Ptr) {
         self.with_stack_alloc(|ctx, tmp| {
             ctx.mov(target, tmp);
 
             ctx.iff(source, |ctx| {
                 ctx.iff_destructive(tmp, |ctx| {
-                    ctx.cell(target).increment_by(1);
+                    ctx.increment_by(target, 1);
                 })
             })
         });
     }
 
-    pub fn and(&mut self, a: isize, b: isize, target: isize) {
+    pub fn and(&mut self, a: &Ptr, b: &Ptr, target: &Ptr) {
         assert_ne!(a, target);
         assert_ne!(b, target);
         self.copy(b, target);
         self.and_assign(a, target);
     }
 
-    pub fn and_not(&mut self, a: isize, b: isize, target: isize) {
+    pub fn and_not(&mut self, a: &Ptr, b: &Ptr, target: &Ptr) {
         self.copy(b, target);
         self.not(target);
         self.and_assign(a, target);
     }
 
-    pub fn or_assign(&mut self, source: isize, target: isize) {
+    pub fn or_assign(&mut self, source: &Ptr, target: &Ptr) {
         self.with_stack_alloc(|ctx, tmp| {
             ctx.mov(target, tmp);
 
             ctx.iff(source, |ctx| {
-                ctx.cell(target).assume_bool(false).set_bool(true);
+                ctx.assume_bool(target, false);
+                ctx.set_bool(target, true);
             });
 
             ctx.iff_destructive(tmp, |ctx| {
-                ctx.cell(target).set_bool(true);
+                ctx.set_bool(target, true);
             })
         });
     }
 
-    pub fn or(&mut self, a: isize, b: isize, target: isize) {
+    pub fn or(&mut self, a: &Ptr, b: &Ptr, target: &Ptr) {
         assert_ne!(a, target);
         assert_ne!(b, target);
         self.copy(b, target);
         self.or_assign(a, target);
     }
 
-    pub fn nor_assign(&mut self, source: isize, target: isize) {
+    pub fn nor_assign(&mut self, source: &Ptr, target: &Ptr) {
         self.or_assign(source, target);
         self.not(target);
     }
 
-    pub fn nor(&mut self, a: isize, b: isize, target: isize) {
+    pub fn nor(&mut self, a: &Ptr, b: &Ptr, target: &Ptr) {
         assert_ne!(a, target);
         assert_ne!(b, target);
         self.copy(b, target);
         self.nor_assign(a, target);
     }
 
-    pub fn xor_assign(&mut self, source: isize, target: isize) {
+    pub fn xor_assign(&mut self, source: &Ptr, target: &Ptr) {
         self.equals_assign(source, target);
     }
 
-    pub fn xor(&mut self, a: isize, b: isize, target: isize) {
+    pub fn xor(&mut self, a: &Ptr, b: &Ptr, target: &Ptr) {
         assert_ne!(a, target);
         assert_ne!(b, target);
         self.copy(b, target);
@@ -504,127 +606,8 @@ impl<'c> Context<'c> {
         self.code.push_str(code);
     }
 
-    pub fn ptr(&self) -> isize {
-        self.ptr
-    }
-}
-
-pub struct CellContext<'ctx, 'c> {
-    context: &'ctx mut Context<'c>,
-    ptr: isize,
-}
-
-impl<'ctx, 'c> CellContext<'ctx, 'c> {
-    pub fn new(context: &'ctx mut Context<'c>, ptr: isize) -> Self {
-        Self {
-            context,
-            ptr,
-        }
-    }
-
-    pub fn assume(&mut self, value: u8) -> &mut Self {
-        self.context.assume(self.ptr, value);
-        self
-    }
-
-    pub fn assume_bool(&mut self, value: bool) -> &mut Self {
-        debug_assert!(false as u8 == 0);
-        debug_assert!(true as u8 == 1);
-
-        self.assume(value as u8);
-        self
-    }
-
-    pub fn value(&self) -> Option<u8> {
-        self.context.value(self.ptr)
-    }
-
-    pub fn forget(&mut self) -> &mut Self {
-        self.context.forget(self.ptr);
-        self
-    }
-
-    fn seek(&mut self) {
-        self.context.seek(self.ptr);
-    }
-
-    fn emit(&mut self, code: &str) -> &mut Self {
-        self.context.emit(code);
-        self
-    }
-
-    fn map_current_value<F>(&mut self, f: F) -> &mut Self
-    where
-        F: FnOnce(u8) -> u8,
-    {
-        self.context.map_known_value(self.ptr, f);
-        self
-    }
-
-    pub fn clear(&mut self) -> &mut Self {
-        if self.value() == Some(0) {
-            return self;
-        }
-
-        self.seek();
-        self.emit("[-]");
-        self.assume(0)
-    }
-
-    pub fn set(&mut self, value: u8) -> &mut Self {
-        if self.value() == Some(value) {
-            return self;
-        }
-
-        self.seek();
-        self.clear();
-        self.increment_by(value)
-    }
-
-    pub fn set_bool(&mut self, value: bool) -> &mut Self {
-        debug_assert!(false as u8 == 0);
-        debug_assert!(true as u8 == 1);
-
-        match self.value() {
-            Some(0) => self.increment(),
-            Some(1) => self.decrement(),
-            _ => self.set(value as u8),
-        }
-    }
-
-    pub fn increment(&mut self) -> &mut Self {
-        self.seek();
-        self.emit("+");
-        self.map_current_value(|v| v + 1)
-    }
-
-    pub fn increment_by(&mut self, amount: u8) -> &mut Self {
-        self.seek();
-        self.context.emit(&"+".repeat(amount as usize));
-        self.map_current_value(|v| v + amount)
-    }
-
-    pub fn decrement(&mut self) -> &mut Self {
-        self.seek();
-        self.emit("-");
-        self.map_current_value(|v| v - 1)
-    }
-
-    pub fn decrement_by(&mut self, amount: u8) -> &mut Self {
-        self.seek();
-        self.context.emit(&"-".repeat(amount as usize));
-        self.map_current_value(|v| v - amount)
-    }
-
-    pub fn print(&mut self) -> &mut Self {
-        self.seek();
-        self.emit(".")
-    }
-
-    pub fn read(&mut self) -> &mut Self {
-        self.seek();
-        self.forget();
-        self.emit(",")
+    pub fn addr(&self) -> isize {
+        self.addr
     }
 }
 
@@ -636,11 +619,11 @@ mod tests {
     #[test]
     fn seek() {
         let code = gen(|ctx| {
-            ctx.seek(3);
+            ctx.seek(&Ptr::new(3));
             ctx.emit("a");
-            ctx.seek(1);
+            ctx.seek(&Ptr::new(1));
             ctx.emit("b");
-            ctx.seek(5);
+            ctx.seek(&Ptr::new(5));
         });
 
         assert_eq!(code, ">>>a<<b>>>>");
@@ -649,12 +632,11 @@ mod tests {
     #[test]
     fn while_not_zero() {
         let code = gen(|ctx| {
+            let a = &ctx.stack_alloc();
+            let i = &ctx.stack_alloc();
 
-            let a = ctx.stack_alloc();
-            let i = ctx.stack_alloc();
-
-            ctx.cell(a).set(2);
-            ctx.cell(i).set(3);
+            ctx.set(a, 2);
+            ctx.set(i, 3);
             ctx.while_not_zero(i, |ctx| {
                 ctx.increment(a);
             });
@@ -667,11 +649,11 @@ mod tests {
     fn repeat_reverse_destructive() {
         let code = gen(|ctx| {
 
-            let a = ctx.stack_alloc();
-            let i = ctx.stack_alloc();
+            let a = &ctx.stack_alloc();
+            let i = &ctx.stack_alloc();
 
-            ctx.cell(a).set(2);
-            ctx.cell(i).set(3);
+            ctx.set(a, 2);
+            ctx.set(i, 3);
 
             ctx.repeat_reverse_destructive(i, |ctx, _| {
                 ctx.increment(a);
@@ -684,11 +666,11 @@ mod tests {
     #[test]
     fn repeat_reverse() {
         let code = gen(|ctx| {
-            let a = ctx.stack_alloc();
-            let i = ctx.stack_alloc();
+            let a = &ctx.stack_alloc();
+            let i = &ctx.stack_alloc();
 
-            ctx.cell(a).set(2);
-            ctx.cell(i).set(3);
+            ctx.set(a, 2);
+            ctx.set(i, 3);
 
             ctx.repeat_reverse(i, |ctx, _| {
                 ctx.increment(a);
@@ -701,7 +683,7 @@ mod tests {
     #[test]
     fn set() {
         let code = gen(|ctx| {
-            ctx.cell(3).set(13);
+            ctx.set(&Ptr::new(3), 13);
         });
 
         assert_eq!(code, ">>>[-]+++++++++++++");
@@ -711,8 +693,8 @@ mod tests {
     fn not() {
         let mem = run(|ctx| {
             ctx.with_stack_alloc2(|ctx, a, b| {
-                ctx.cell(a).set_bool(false);
-                ctx.cell(b).set_bool(true);
+                ctx.set_bool(a, false);
+                ctx.set_bool(a, true);
                 ctx.not(a);
                 ctx.not(b);
             })
@@ -726,8 +708,8 @@ mod tests {
         let mem = run(|ctx| {
             ctx.with_stack_alloc2(|ctx, false_, true_| {
                 ctx.with_stack_alloc4(|ctx, a, b, c, d| {
-                    ctx.cell(false_).set_bool(false);
-                    ctx.cell(true_).set_bool(true);
+                    ctx.set_bool(false_, false);
+                    ctx.set_bool(true_, true);
                     ctx.or(false_, false_, a);
                     ctx.or(false_,  true_, b);
                     ctx.or( true_, false_, c);
@@ -744,8 +726,8 @@ mod tests {
         let mem = run(|ctx| {
             ctx.with_stack_alloc2(|ctx, false_, true_| {
                 ctx.with_stack_alloc4(|ctx, a, b, c, d| {
-                    ctx.cell(false_).set_bool(false);
-                    ctx.cell(true_).set_bool(true);
+                    ctx.set_bool(false_, false);
+                    ctx.set_bool(true_, true);
                     ctx.xor(false_, false_, a);
                     ctx.xor(false_,  true_, b);
                     ctx.xor( true_, false_, c);
@@ -762,8 +744,8 @@ mod tests {
         let mem = run(|ctx| {
             ctx.with_stack_alloc2(|ctx, false_, true_| {
                 ctx.with_stack_alloc4(|ctx, a, b, c, d| {
-                    ctx.cell(false_).set_bool(false);
-                    ctx.cell(true_).set_bool(true);
+                    ctx.set_bool(false_, false);
+                    ctx.set_bool(true_, true);
                     ctx.and(false_, false_, a);
                     ctx.and(false_,  true_, b);
                     ctx.and( true_, false_, c);
@@ -779,10 +761,10 @@ mod tests {
     fn add() {
         let mem = run(|ctx| {
             ctx.with_stack_alloc4(|ctx, a, b, c, d| {
-                ctx.cell(a).set(6);
-                ctx.cell(b).set(7);
-                ctx.cell(c).set(8);
-                ctx.cell(d).set(9);
+                ctx.set(a, 6);
+                ctx.set(b, 7);
+                ctx.set(c, 8);
+                ctx.set(d, 9);
                 ctx.add(a, b);
                 ctx.add(d, c);
             })
@@ -795,10 +777,10 @@ mod tests {
     fn mul() {
         let mem = run(|ctx| {
             ctx.with_stack_alloc4(|ctx, a, b, c, d| {
-                ctx.cell(a).set(6);
-                ctx.cell(b).set(7);
-                ctx.cell(c).set(8);
-                ctx.cell(d).set(9);
+                ctx.set(a, 6);
+                ctx.set(b, 7);
+                ctx.set(c, 8);
+                ctx.set(d, 9);
                 ctx.mul(a, b);
                 ctx.mul(d, c);
             })
@@ -812,10 +794,10 @@ mod tests {
     fn sub() {
         let mem = run(|ctx| {
             ctx.with_stack_alloc4(|ctx, a, b, c, d| {
-                ctx.cell(a).set(9);
-                ctx.cell(b).set(8);
-                ctx.cell(c).set(6);
-                ctx.cell(d).set(7);
+                ctx.set(a, 9);
+                ctx.set(b, 8);
+                ctx.set(c, 6);
+                ctx.set(d, 7);
                 ctx.sub(a, b);
                 ctx.sub(d, c);
             })
@@ -828,8 +810,8 @@ mod tests {
     fn greater_than() {
         let mem = run(|ctx| {
             ctx.with_stack_alloc5(|ctx, a, b, r1, r2, r3| {
-                ctx.cell(a).set(6);
-                ctx.cell(b).set(10);
+                ctx.set(a, 6);
+                ctx.set(b, 10);
                 ctx.greater_than(a, b, r1);
                 ctx.greater_than(b, a, r2);
                 ctx.greater_than(a, a, r3);
@@ -842,7 +824,7 @@ mod tests {
     #[test]
     fn clear() {
         let code = gen(|ctx| {
-            ctx.cell(3).clear();
+            ctx.clear(&Ptr::new(3));
         });
 
         assert_eq!(code, ">>>[-]");
