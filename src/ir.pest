@@ -14,10 +14,12 @@ stmt_if = { "if" ~ expr ~ "{" ~ stmt* ~ "}" }
 expr = { term ~ (op ~ term)* }
 expr_const = { number }
 expr_var = { ident }
+expr_char = { "'" ~ char ~ "'" }
 
 term = _{
 	  expr_const
     | expr_var
+    | expr_char
     | "(" ~ expr ~ ")"
 }
 op = _{
@@ -30,7 +32,7 @@ op_sub = { "-" }
 op_gt = { ">" }
 
 number = @{ ASCII_DIGIT+ }
-
 ident = @{ ASCII_ALPHA ~ (ASCII_ALPHA | "_")* }
+char = @{ ASCII_ALPHA }
 
 WHITESPACE = _{ " " | "\n" | "\t" }

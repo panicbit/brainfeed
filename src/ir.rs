@@ -168,6 +168,7 @@ impl Expr {
 
         Ok(match rule {
             Rule::expr_const => Expr::Const(pairs.as_str().parse()?),
+            Rule::expr_char => Expr::Const(pairs.as_str().as_bytes()[0]),
             Rule::expr_var => Expr::Var(Ident::parse(pairs.next().unwrap())?),
             rule => Err(format!("BUG: Unhandled term rule: {:?}", rule))?,
         })
