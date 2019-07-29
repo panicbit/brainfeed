@@ -14,77 +14,87 @@ pub fn trans(ir: &IR) -> Result<String> {
 
 struct Trans<'ctx> {
     context: &'ctx mut Context<'ctx>,
+    scopes: Vec<Scope>,
 }
 
 impl<'ctx> Trans<'ctx> {
     fn new(context: &'ctx mut Context<'ctx>) -> Self {
-        Self { context }
+        Self {
+            context,
+            scopes: Vec::new(),
+        }
     }
 
     fn run(mut self, ir: &IR) -> Result {
-        Scope::root(&mut self, |trans, scope| {
-            for stmt in &ir.stmts {
-                trans.trans_stmt(scope, stmt)?;
-            }
-            Ok(())
-        })
+        self.push_scope();
+
+        for stmt in &ir.stmts {
+            self.trans_stmt(stmt)?;
+        }
+
+        self.pop_scope();
+        Ok(())
     }
 
-    fn trans_stmt(&mut self, scope: &mut Scope, stmt: &Statement) -> Result {
+    fn trans_stmt(&mut self, stmt: &Statement) -> Result {
         Ok(match stmt {
             Statement::Decl(Decl { name, value }) => {
-                let ptr = &scope.alloc_var(self.context, name.clone());
+                let ptr = self.context.stack_alloc();
+                self.decl_var(name.clone(), &ptr);
 
                 if let Some(value) = value {
-                    self.trans_expr(scope, value, ptr)?;
+                    let value = self.trans_expr(value)?;
+                    self.context.copy(&value, &ptr);
                 }
             }
             Statement::Assign(Assign { name, value }) => {
-                let ptr = &scope.resolve_var(name)?;
-
-                self.trans_expr(scope, value, ptr)?;
+                let value = self.trans_expr(value)?;
+                let ptr = self.resolve_var(name)?;
+                self.context.copy(&value, &ptr);
             }
-            Statement::While(While { cond, body }) => self.trans_stmt_while(scope, cond, body)?,
-            Statement::If(if_) => self.trans_stmt_if(scope, if_)?,
+            Statement::While(While { cond, body }) => self.trans_stmt_while(cond, body)?,
+            Statement::If(if_) => self.trans_stmt_if(if_)?,
         })
     }
 
-    fn trans_stmt_while(&mut self, scope: &mut Scope, cond: &Expr, body: &[Statement]) -> Result {
-        let tmp = &self.context.stack_alloc();
-        
-        self.trans_expr(scope, cond, tmp)?;
-        self.context.seek(tmp);
+    fn trans_stmt_while(&mut self, cond: &Expr, body: &[Statement]) -> Result {
+        let tmp = self.trans_expr(cond)?;
+        self.context.seek(&tmp);
         self.context.emit("[");
         self.context.forget_known_values();
 
-        scope.new(self, |this, scope| {
-            for stmt in body {
-                this.trans_stmt(scope, stmt)?;
-            }
-            Ok(())
-        })?;
+        self.push_scope();
 
-        self.trans_expr(scope, cond, tmp)?;
-        self.context.seek(tmp);
+        for stmt in body {
+            self.trans_stmt(stmt)?;
+        }
+
+        self.pop_scope();
+
+        drop(tmp);
+        let tmp = self.trans_expr(cond)?;
+        self.context.seek(&tmp);
         self.context.emit("]");
 
         Ok(())
     }
 
-    fn trans_stmt_if(&mut self, scope: &mut Scope, If { cond, body }: &If) -> Result {        
+    fn trans_stmt_if(&mut self, If { cond, body }: &If) -> Result {
+        let cond = &self.trans_expr(cond)?;
         let tmp = &self.context.stack_alloc();
-        
-        self.trans_expr(scope, cond, tmp)?;
+        self.context.copy(cond, tmp);
+
         self.context.seek(tmp);
         self.context.emit("[");
         self.context.forget_known_values();
 
-        scope.new(self, |this, scope| {
-            for stmt in body {
-                this.trans_stmt(scope, stmt)?;
-            }
-            Ok(())
-        })?;
+        self.push_scope();
+
+        for stmt in body {
+            self.trans_stmt(stmt)?;
+        }
+
+        self.pop_scope();
 
         self.context.decrement(tmp);
         self.context.seek(tmp);
@@ -93,98 +103,105 @@ impl<'ctx> Trans<'ctx> {
         Ok(())
     }
 
-    fn trans_expr(&mut self, scope: &mut Scope, expr: &Expr, target: &Ptr) -> Result {
+    fn trans_expr(&mut self, expr: &Expr) -> Result<Ptr> {
         use Expr::*;
         Ok(match expr {
             Const(value) => {
-                self.context.set(target, *value);
+                let ptr = self.context.stack_alloc();
+                self.context.set(&ptr, *value);
+                ptr
             }
-            Var(name) => {
-                let ptr = &scope.resolve_var(name)?;
-
-                self.context.copy(ptr, target);
-            }
+            Var(name) => self.resolve_var(name)?,
             Add(a, b) => {
-                let a_tmp = &self.context.stack_alloc();
-                let b_tmp = &self.context.stack_alloc();
+                let a = &self.trans_expr(a)?;
+                let b = &self.trans_expr(b)?;
+                let tmp = &self.context.stack_alloc();
+                let res = self.context.stack_alloc();
 
-                self.trans_expr(scope, a, a_tmp)?;
-                self.trans_expr(scope, b, b_tmp)?;
+                self.context.copy(a, &res);
+                self.context.copy(b, tmp);
+                self.context.add(&res, tmp);
 
-                self.context.add(a_tmp, b_tmp);
-                self.context.mov(a_tmp, target);
+                res
             }
             Sub(a, b) => {
-                let a_tmp = &self.context.stack_alloc();
-                let b_tmp = &self.context.stack_alloc();
+                let a = &self.trans_expr(a)?;
+                let b = &self.trans_expr(b)?;
+                let tmp = &self.context.stack_alloc();
+                let res = self.context.stack_alloc();
 
-                self.trans_expr(scope, a, a_tmp)?;
-                self.trans_expr(scope, b, b_tmp)?;
+                self.context.copy(a, &res);
+                self.context.copy(b, tmp);
+                self.context.sub(&res, tmp);
 
-                self.context.sub(a_tmp, b_tmp);
-                self.context.mov(a_tmp, target);
+                res
             }
             Gt(a, b) => {
-                let a_tmp = &self.context.stack_alloc();
-                let b_tmp = &self.context.stack_alloc();
+                let a = &self.trans_expr(a)?;
+                let b = &self.trans_expr(b)?;
+                let res = self.context.stack_alloc();
 
-                self.trans_expr(scope, a, a_tmp)?;
-                self.trans_expr(scope, b, b_tmp)?;
+                self.context.greater_than(a, b, &res);
 
-                self.context.greater_than(a_tmp, b_tmp, target);
+                res
             }
         })
     }
-}
 
-struct Scope<'a> {
-    variables: Vec<(Ident, Ptr)>,
-    outer: Option<&'a Scope<'a>>,
-}
-
-impl<'a> Scope<'a> {
-    fn root<F, R>(trans: &mut Trans, f: F) -> Result<R>
-    where
-        F: FnOnce(&mut Trans, &mut Self) -> Result<R>,
-    {
-        let mut root = Scope {
-            variables: Vec::new(),
-            outer: None,
-        };
-
-        f(trans, &mut root)
+    fn push_scope(&mut self) {
+        self.scopes.push(Scope::new());
     }
 
-    fn new<F, R>(&'a self, trans: &mut Trans, f: F) -> Result<R>
-    where
-        F: FnOnce(&mut Trans, &mut Self) -> Result<R>,
-    {
-        let mut inner = Scope {
-            variables: Vec::new(),
-            outer: Some(self),
-        };
-
-        f(trans, &mut inner)
+    fn pop_scope(&mut self) {
+        println!("scopes: {:#?}", self.scopes);
+        self.scopes.pop();
     }
 
-    fn resolve_var(&self, ident: &Ident) -> Result<Ptr> {
+    fn decl_var(&mut self, name: Ident, ptr: &Ptr) {
+        self.scopes.last_mut().unwrap().decl_var(name, ptr);
+    }
+
+    fn find_var(&self, name: &Ident) -> Result<&Var> {
+        self.scopes.iter()
+            .rev()
+            .flat_map(|scope| scope.find_var(name))
+            .next()
+            .ok_or_else(|| format!("Variable '{}' is not in scope", &**name).into())
+    }
+
+    fn resolve_var(&self, name: &Ident) -> Result<Ptr> {
+        Ok(self.find_var(name)?.ptr.clone())
+    }
+}
+
+#[derive(Debug)]
+struct Scope {
+    variables: Vec<Var>,
+}
+
+impl Scope {
+    fn new() -> Self {
+        Self {
+            variables: Vec::new(),
+        }
+    }
+
+    fn decl_var(&mut self, name: Ident, ptr: &Ptr) {
+        self.variables.push(Var {
+            name,
+            ptr: ptr.clone(),
+        });
+    }
+
+    fn find_var(&self, name: &Ident) -> Option<&Var> {
         self.variables.iter()
             .rev()
-            .find(|(other_ident, _)| other_ident == ident)
-            .map(|(_, ptr)| ptr.clone())
-            .or_else(||
-                self.outer.and_then(|outer|
-                    outer.resolve_var(ident).ok()
-                )
-            )
-            .ok_or(format!("Variable '{}' does not exist in the current scope", &**ident).into())
+            .find(|var| var.name == *name)
     }
+}
 
-    fn alloc_var(&mut self, context: &mut Context, ident: Ident) -> Ptr {
-        let ptr = context.stack_alloc();
-
-        self.variables.push((ident, ptr.clone()));
-
-        ptr
-    }
+#[derive(Debug)]
+struct Var {
+    name: Ident,
+    ptr: Ptr,
 }
