@@ -52,6 +52,11 @@ impl<'ctx> Trans<'ctx> {
                 let ptr = self.resolve_var(name)?;
                 self.context.copy(&value, &ptr);
             }
+            Statement::AddAssign(AddAssign { name, value }) => {
+                let value = self.trans_expr(value)?;
+                let ptr = self.resolve_var(name)?;
+                self.context.add(&ptr, &value);
+            }
             Statement::While(While { cond, body }) => self.trans_stmt_while(cond, body)?,
             Statement::If(if_) => self.trans_stmt_if(if_)?,
         })
@@ -111,7 +116,12 @@ impl<'ctx> Trans<'ctx> {
                 self.context.set(&ptr, *value);
                 ptr
             }
-            Var(name) => self.resolve_var(name)?,
+            Var(name) => {
+                let var = self.resolve_var(name)?;
+                let ret = self.context.stack_alloc();
+                self.context.copy(&var, &ret);
+                ret
+            },
             Add(a, b) => {
                 let a = &self.trans_expr(a)?;
                 let b = &self.trans_expr(b)?;

@@ -34,6 +34,7 @@ impl IR {
 pub enum Statement {
     Decl(Decl),
     Assign(Assign),
+    AddAssign(AddAssign),
     While(While),
     If(If),
 }
@@ -47,6 +48,7 @@ impl Statement {
         Ok(match pair.as_rule() {
             Rule::stmt_decl => Statement::Decl(Decl::parse(pair)?),
             Rule::stmt_assign => Statement::Assign(Assign::parse(pair)?),
+            Rule::stmt_add_assign => Statement::AddAssign(AddAssign::parse(pair)?),
             Rule::stmt_while => Statement::While(While::parse(pair)?),
             Rule::stmt_if => Statement::If(If::parse(pair)?),
             rule => Err(format!("BUG: unhandled stmt rule: {:?}", rule))?,
@@ -91,6 +93,26 @@ impl Assign {
         })
     }
 }
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AddAssign {
+    pub name: Ident,
+    pub value: Expr,
+}
+
+impl AddAssign {
+    fn parse(pair: Pair) -> Result<Self> {
+        ensure_rule(&pair, Rule::stmt_add_assign)?;
+
+        let mut pairs = pair.into_inner();
+
+        Ok(Self {
+            name: Ident::parse(pairs.next().unwrap())?,
+            value: Expr::parse(pairs.next().unwrap())?,
+        })
+    }
+}
+
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct While {

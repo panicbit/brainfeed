@@ -3,11 +3,15 @@ ir = _{ SOI ~ (stmt)* ~ EOI }
 stmt = {
 	  stmt_decl
 	| stmt_assign
+    | stmt_add_assign
+    | stmt_sub_assign
     | stmt_while
     | stmt_if
 }
 stmt_decl = { "let" ~ ident ~ ("=" ~ expr)? }
 stmt_assign = { ident ~ "=" ~ expr }
+stmt_add_assign = { ident ~ "+=" ~ expr }
+stmt_sub_assign = { ident ~ "-=" ~ expr }
 stmt_while = { "while" ~ expr ~ "{" ~ stmt* ~ "}" }
 stmt_if = { "if" ~ expr ~ "{" ~ stmt* ~ "}" }
 
