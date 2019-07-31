@@ -123,28 +123,16 @@ impl<'ctx> Trans<'ctx> {
                 ret
             },
             Add(a, b) => {
-                let a = &self.trans_expr(a)?;
-                let b = &self.trans_expr(b)?;
-                let tmp = &self.context.stack_alloc();
-                let res = self.context.stack_alloc();
-
-                self.context.copy(a, &res);
-                self.context.copy(b, tmp);
-                self.context.add(&res, tmp);
-
-                res
+                let a = self.trans_expr(a)?;
+                let b = self.trans_expr(b)?;
+                self.context.add(&a, &b);
+                a
             }
             Sub(a, b) => {
-                let a = &self.trans_expr(a)?;
-                let b = &self.trans_expr(b)?;
-                let tmp = &self.context.stack_alloc();
-                let res = self.context.stack_alloc();
-
-                self.context.copy(a, &res);
-                self.context.copy(b, tmp);
-                self.context.sub(&res, tmp);
-
-                res
+                let a = self.trans_expr(a)?;
+                let b = self.trans_expr(b)?;
+                self.context.sub(&a, &b);
+                a
             }
             Gt(a, b) => {
                 let a = &self.trans_expr(a)?;
