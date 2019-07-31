@@ -44,13 +44,13 @@ impl<'ctx> Trans<'ctx> {
 
                 if let Some(value) = value {
                     let value = self.trans_expr(value)?;
-                    self.context.copy(&value, &ptr);
+                    self.context.mov(&value, &ptr);
                 }
             }
             Statement::Assign(Assign { name, value }) => {
                 let value = self.trans_expr(value)?;
                 let ptr = self.resolve_var(name)?;
-                self.context.copy(&value, &ptr);
+                self.context.mov(&value, &ptr);
             }
             Statement::AddAssign(AddAssign { name, value }) => {
                 let value = self.trans_expr(value)?;
@@ -117,9 +117,9 @@ impl<'ctx> Trans<'ctx> {
                 ptr
             }
             Var(name) => {
-                let var = self.resolve_var(name)?;
+                let ptr = self.resolve_var(name)?;
                 let ret = self.context.stack_alloc();
-                self.context.copy(&var, &ret);
+                self.context.copy(&ptr, &ret);
                 ret
             },
             Add(a, b) => {
