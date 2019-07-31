@@ -10,7 +10,7 @@ fn main() {
         ctx.increment_by(i, nth_fib);
 
         ctx.repeat_reverse_destructive(i, |ctx, _| {
-            ctx.mov(current, tmp);
+            ctx.mov(tmp, current);
             ctx.copy(next, current);
             ctx.add(next, tmp);
         });

@@ -44,13 +44,13 @@ impl<'ctx> Trans<'ctx> {
 
                 if let Some(value) = value {
                     let value = self.trans_expr(value)?;
-                    self.context.mov(&value, &ptr);
+                    self.context.mov(&ptr, &value);
                 }
             }
             Statement::Assign(Assign { name, value }) => {
                 let value = self.trans_expr(value)?;
                 let ptr = self.resolve_var(name)?;
-                self.context.mov(&value, &ptr);
+                self.context.mov(&ptr, &value);
             }
             Statement::AddAssign(AddAssign { name, value }) => {
                 let value = self.trans_expr(value)?;

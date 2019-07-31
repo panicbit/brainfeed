@@ -397,11 +397,11 @@ impl<'c> Context<'c> {
                 ctx.add(product, tmp);
             });
 
-            ctx.mov(product, target);
+            ctx.mov(target, product);
         })
     }
 
-    pub fn mov(&mut self, source: &Ptr, target: &Ptr) {
+    pub fn mov(&mut self, target: &Ptr, source: &Ptr) {
         if source == target {
             return;
         }
@@ -510,7 +510,7 @@ impl<'c> Context<'c> {
 
         self.with_stack_alloc(|ctx, tmp| {
             ctx.clear(target);
-            ctx.mov(source, tmp);
+            ctx.mov(tmp, source);
             ctx.repeat_reverse_destructive(tmp, |ctx, _| {
                 ctx.increment(source);
                 ctx.increment(target);
@@ -534,7 +534,7 @@ impl<'c> Context<'c> {
 
     pub fn and_assign(&mut self, source: &Ptr, target: &Ptr) {
         self.with_stack_alloc(|ctx, tmp| {
-            ctx.mov(target, tmp);
+            ctx.mov(tmp, target);
 
             ctx.iff(source, |ctx| {
                 ctx.iff_destructive(tmp, |ctx| {
@@ -559,7 +559,7 @@ impl<'c> Context<'c> {
 
     pub fn or_assign(&mut self, source: &Ptr, target: &Ptr) {
         self.with_stack_alloc(|ctx, tmp| {
-            ctx.mov(target, tmp);
+            ctx.mov(tmp, target);
 
             ctx.iff(source, |ctx| {
                 ctx.assume_bool(target, false);
